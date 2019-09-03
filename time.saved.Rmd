@@ -1,0 +1,159 @@
+---
+title: "Simulate time saved nationally by a simplified ethics/SSA system"
+author: "Adrian Barnett"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+# basic set up
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE, error=FALSE, comment='', dpi=400)
+options(width=1000, scipen = 999) # Wide pages and no scientific numbers
+
+# libraries
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+
+## key data
+# from NHMRC report
+n.proposals = 18039 # number of new proposals per year (not re-submissions or amendments); from 195 committees
+# high risk
+n.trials = 2155 # new clinical trial
+n.gametes = 0 # hard to know
+n.atsi = 0 # hard to know
+p.low.neg = 0.4 # proportion of all applications that are low and negligible risk
+p.need.SSA = 0.4 # proportion of low and negligible risk applications that need an SSA
+# multiply together to get the number we consider
+n.lowrisk.applications = round(n.proposals*p.low.neg*p.low.neg)
+
+# get empirical data on times
+source('empirical.data.R')
+
+```
+
+We model the national number of low and negligible risk ethics applications and estimate: 1) the time spent currently and, 2) how much time could be saved in a streamlined system.
+
+# Time spent in the current system
+
+We start with the total number of ethics proposals from an NHMRC report. 
+This was `r format(n.proposals, big.mark=',')` in 2016.
+
+The proportion of low and negligible risk applications was not given in the report, hence we estimate it to be `r p.low.neg` (_IMPROVE_).
+
+We also want to consider applications that need an SSA, so those would include healthcare facilities.
+We estimate that this proportion would be `r p.need.SSA` (_IMPROVE_), and this is the proportion of all low and negligible risk applications.
+
+This means the overall proportion of low and negligible risk applications is `r p.low.neg*p.low.neg` and the total number of applications we consider is `r format(n.lowrisk.applications, big.mark=',')` per year.
+
+```{r simulate, include=FALSE}
+## number of committees ##
+# split into ethics ...
+ethics.frame = data.frame(id = 1:n.lowrisk.applications, n.ethics= 1 + rpois(lambda=0.5, n=n.lowrisk.applications)) %>% # number of ethics commitees, minimum of 1
+  uncount(n.ethics) %>% # expand rows for each committee
+  mutate(time = sample(ethics.times, replace = TRUE, size=n())) %>%
+  group_by(id) %>%
+  summarise(n.ethics = n(), total.ethics = sum(time), time.ethics=max(time)) %>% # total time and longest ethics committee
+  ungroup()
+# ...  and site-specific
+ssa.frame = data.frame(id = 1:n.lowrisk.applications, n.ssa= 1 + rpois(lambda=2, n=n.lowrisk.applications)) %>% # number of ethics commitees, minimum of 1
+  uncount(n.ssa) %>% # expand rows for each SSA
+  mutate(time = sample(ssa.times, replace = TRUE, size=n())) %>%
+  group_by(id) %>%
+  summarise(n.ssa = n(), total.ssa = sum(time), time.ssa=max(time)) %>% # total time and longest SSA
+  ungroup()
+# now merge and calculate total hours per study
+totals = full_join(ethics.frame, ssa.frame, by='id') %>%
+  mutate(total.time = total.ethics + total.ssa, # total number of hours
+         time = time.ethics + time.ssa) # time for approval (slowest time) which is the time for researchers
+```
+
+
+# Simulated number of ethics committees per proposal
+
+We simulate the number of ethics committees and site-specific approvals needed per study using Poisson distributions, with a minimum of one ethics and one SSA approval.
+
+```{r ethics.plot}
+to.plot = select(totals, id, n.ethics, n.ssa) %>%
+gather(n.ethics, n.ssa, key='app', value='number') %>%
+mutate(facet = ifelse(app=='n.ethics', 'Ethics', 'Site-specific'))
+
+hplot = ggplot(to.plot, aes(x=number)) +
+  geom_bar()+
+  scale_x_continuous(breaks=1:12)+
+  xlab('Number of approvals per study')+
+  ylab('Frequency')+
+  theme_bw()+
+  facet_wrap(~facet)+
+  theme(panel.grid.minor = element_blank())
+hplot
+```
+
+# Time spent per approval
+
+For the times per approval, we use data from Barnett et al (2016) and Duplancic et al (2019) from their low and negligible risk studies.
+We simulate times from these studies using an empirical distribution.
+The observed times for ethics and SSA are shown below.
+
+```{r bar, fig.width=11, fig.height=6}
+plot = ggplot(studies, aes(x=id, y=time, fill=factor(which)))+
+  geom_bar(stat='identity')+
+  scale_fill_manual('', values=c('dark red','dark blue'))+
+  theme_bw()+
+  xlab('')+
+  ylab('Time, days')+
+  facet_wrap(~study, scales='free_x')
+plot
+```
+
+
+# Simulated times
+
+The plot below shows the simulated times in days for studies to get ethics and SSA approval.
+The dotted vertical line is at six months.
+The approval times are calculated using the longest HREC and longest SSA per study.
+
+```{r time.plot}
+hplot = ggplot(totals, aes(x=time)) +
+  geom_histogram(bins=25)+
+  xlab('Time in days')+
+  ylab('Frequency')+
+  theme_bw()+
+  geom_vline(xintercept = 183, lty=2) # line at six months
+hplot
+```
+
+# Total time and potential time saved
+
+In the simplified system we assume all applications take no longer than six months, which is based on the system proposed by Clay-Williams et al (2019).
+
+```{r times, include=FALSE}
+update = mutate(totals,
+                time.saved = time - 183, # minus 183 days for six months
+                time.saved = ifelse(time.saved < 0, 0, time.saved)) # ignore faster approvals for time saved
+# time in current system
+total.pre = sum(update$time)
+total.pre.years = round(sum(update$time) / 365.25) # convert to years including weekends
+# time saved for researchers
+total.post = sum(update$time.saved)
+total.post.years = round(sum(update$time.saved) / 365.25) # convert to years including weekends
+saved = total.pre.years - total.post.years
+# salary (from Duplancic)
+salary = 56000 # AUD
+```
+
+The estimated total time spent in the current system is `r format(total.pre.years, big.mark=',')` years.
+The estimated total time spent in the streamlined system is `r format(total.post.years, big.mark=',')` years.
+The number of years that could be saved is `r format(saved, big.mark=',')` years.
+
+If we apply a full-time researchers offers time at an annual salary of \$`r format(salary, big.mark=',')`, then we have a salary cost of \$`r format(round(saved*salary/(10^6)), big.mark=',')` million per year.
+
+# References
+
+* Duplancic, C. , Crough, T. and Bell, S. C (2019) Multi‐centre ethics and research governance review can impede non‐interventional clinical research. _Intern Med J_, __49__: 722-728. doi:10.1111/imj.14158
+
+* Robyn Clay-Williams, Natalie Taylor and Jeffrey Braithwaite (2019) Potential solutions to improve the governance of multicentre health services research. _Med J Aust_ __208__ (4). doi:10.5694/mja16.01268 
+
+* National Health and Medical Research Council. Report on the Activity of Human Research Ethics Committees and Certified Institutions for the period: 1 January 2016 to 31 December 2016
+
+* Adrian G. Barnett, Megan J. Campbell, Carla Shield, Alison Farrington, Lisa Hall, Katie Page, Anne Gardner, Brett G. Mitchell & Nicholas Graves (2016) The high costs of getting ethical and site-specific approvals for multi-centre research. _Research Integrity and Peer Review_ __1__ 16
