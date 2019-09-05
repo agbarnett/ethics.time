@@ -210,7 +210,7 @@ We estimate the national number of low and negligible risk proposals in two ways
 
 1. By multiplying the national number of HREC applications (`r format(n.proposals, big.mark=',')`) by the proportion of low and negligible risk applications from QUT's HREC (`r format(p.qut.low, digits=2)`). This gives a total national number of low and negligible risk applications of `r format(n.national.estimate1, big.mark=',')`.
 
-2. Using Pubmed, the proportional of journal articles contributed by QUT in 2018 of the total number of articles with Australian affiliations is `r format(qut.prop, digits=2)`. Using the inverse of this proportion applied to the number of low risk ethics applications at QUT in 2018 gives an estimated national number off `r format(n.national.estimate2, big.mark=',')`.
+2. Using Pubmed, the proportional of journal articles contributed by QUT in 2018 of the total number of articles with Australian affiliations is `r format(qut.prop, digits=2)`. Using the inverse of this proportion applied to the number of low risk ethics applications at QUT in 2018 gives an estimated national number of `r format(n.national.estimate2, big.mark=',')`.
 
 Averaging the two estimates gives a national estimate of `r format(n.national.low, big.mark=',')`.
 
