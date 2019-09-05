@@ -172,7 +172,7 @@ total.post = sum(update$time.saved)
 total.post.years = round(sum(update$time.saved) / 365.25) # convert to years including weekends
 saved = total.pre.years - total.post.years
 # salary (from Duplancic)
-salary = 56000 # AUD
+salary = 66400 # AUD , HEW5 =  66,387.05
 ```
 
 The estimated total time spent in the current system is `r format(total.pre.years, big.mark=',')` years.
