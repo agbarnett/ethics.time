@@ -1,5 +1,5 @@
 ---
-title: "Simulate time saved nationally by a simplified ethics/SSA system"
+title: "Simulate time saved nationally by a simplified ethics/site-specific approval system"
 author: "Adrian Barnett"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: word_document
@@ -14,49 +14,66 @@ options(width=1000, scipen = 999) # Wide pages and no scientific numbers
 library(ggplot2)
 library(dplyr)
 library(tidyverse)
+set.seed(7654321)
 
 ## key data
 # from NHMRC report
 n.proposals = 18039 # number of new proposals per year (not re-submissions or amendments); from 195 committees
-# high risk
-n.trials = 2155 # new clinical trial
-n.gametes = 0 # hard to know
-n.atsi = 0 # hard to know
-p.low.neg = 0.4 # proportion of all applications that are low and negligible risk
-p.need.SSA = 0.4 # proportion of low and negligible risk applications that need an SSA
-# multiply together to get the number we consider
-n.lowrisk.applications = round(n.proposals*p.low.neg*p.low.neg)
+# number of trials
+n.trials.nhmrc = 2155 # new clinical trial
+p.nhmrc = n.trials.nhmrc / n.proposals
+# QUT
+n.qut.numerator = 110+70 # committee plus admin review
+n.qut.denominator = 672 # total for 2018 
+p.qut = n.qut.numerator/n.qut.denominator
+n.qut = round(p.qut * n.trials.nhmrc) # extrapolate QUT number nationally
+# from search of ANZCTR
+n.anzctr = 1472
+# from pubmed search of all clinical trials with an Australian affiliation in 2018
+# 2018[PDAT] AND Australia[Affiliation] AND (clinical trial[Publication Type] OR Clinical Study[Publication Type] OR Clinical Trial[Publication Type] OR Clinical Trial, Phase I[Publication Type] OR Clinical Trial, Phase II[Publication Type] OR Clinical Trial, Phase III[Publication Type] OR Clinical Trial, Phase IV[Publication Type] OR Clinical Trial Protocol[Publication Type] OR Adaptive Clinical Trial[Publication Type] OR Equivalence Trial[Publication Type] OR Multicenter Study[Publication Type] OR Pragmatic Clinical Trial[Publication Type] OR Randomized Controlled Trial[Publication Type])
+n.pubmed = 2942
+
+# average to get number of low risk
+n.lowrisk.applications = round( (n.qut + n.trials.nhmrc + n.anzctr + n.pubmed)/4 )
 
 # get empirical data on times
 source('empirical.data.R')
-
 ```
 
-We model the national number of low and negligible risk ethics applications and estimate: 1) the time spent currently and, 2) how much time could be saved in a streamlined system.
+# 1. Approvals requiring ethics and SSA
 
-# Time spent in the current system
+We model the national number of applications requiring ethics and site-specific approvals and estimate: 1) the time spent currently and, 2) how much time could be saved in a streamlined system.
 
-We start with the total number of ethics proposals from an NHMRC report. 
-This was `r format(n.proposals, big.mark=',')` in 2016.
+## 1.1 Time spent in the current ethics/SSA system
 
-The proportion of low and negligible risk applications was not given in the report, hence we estimate it to be `r p.low.neg` (_IMPROVE_).
+We estimate number of applications requiring ethics and SSA from four sources:
 
-We also want to consider applications that need an SSA, so those would include healthcare facilities.
-We estimate that this proportion would be `r p.need.SSA` (_IMPROVE_), and this is the proportion of all low and negligible risk applications.
+1. The number of trials in the NHMRC report on HREC activity was `r n.trials.nhmrc`.
 
-This means the overall proportion of low and negligible risk applications is `r p.low.neg*p.low.neg` and the total number of applications we consider is `r format(n.lowrisk.applications, big.mark=',')` per year.
+2. The number of committee and administrative reviews at QUT in 2018 was `r n.qut.numerator` out of `r n.qut.denominator` applications, which gives a number of `r n.qut` if extrapolated to the national number of applications reported in the NHMRC report.
+
+3. Searching on ANZCTR for studies registered in 2018 that included sites in Australia gives `r n.anzctr`. 
+
+4. Searching on pubmed for clinical trials (of all types) with an Affiliation of "Australia" published in 2018 gives `r n.pubmed` papers.
+
+We average these four numbers to give `r format(n.lowrisk.applications, digits=2)` applications requiring ethics and SSA per year.
 
 ```{r simulate, include=FALSE}
 ## number of committees ##
 # split into ethics ...
-ethics.frame = data.frame(id = 1:n.lowrisk.applications, n.ethics= 1 + rpois(lambda=0.5, n=n.lowrisk.applications)) %>% # number of ethics commitees, minimum of 1
+ethics.frame = data.frame(id = 1:n.lowrisk.applications, n.ethics= 1 + rpois(lambda=0.4, n=n.lowrisk.applications)) %>% # number of ethics commitees, minimum of 1
   uncount(n.ethics) %>% # expand rows for each committee
   mutate(time = sample(ethics.times, replace = TRUE, size=n())) %>%
   group_by(id) %>%
   summarise(n.ethics = n(), total.ethics = sum(time), time.ethics=max(time)) %>% # total time and longest ethics committee
   ungroup()
 # ...  and site-specific
-ssa.frame = data.frame(id = 1:n.lowrisk.applications, n.ssa= 1 + rpois(lambda=2, n=n.lowrisk.applications)) %>% # number of ethics commitees, minimum of 1
+ssa.frame = data.frame(id = 1:n.lowrisk.applications, 
+  # number of ethics commitees, minimum of 1, use two Poisson to capture long tail 80:20 split
+  big.small = rbinom(n=n.lowrisk.applications, size=1, prob=0.8), # P trial is small; big or small number of sites
+  small.size = rpois(lambda=1.5, n=n.lowrisk.applications),
+  big.size = rpois(lambda=10, n=n.lowrisk.applications)) %>%
+  mutate(n.ssa = round(1 + big.small * small.size + (1-big.small) * big.size )) %>% 
   uncount(n.ssa) %>% # expand rows for each SSA
   mutate(time = sample(ssa.times, replace = TRUE, size=n())) %>%
   group_by(id) %>%
@@ -68,19 +85,17 @@ totals = full_join(ethics.frame, ssa.frame, by='id') %>%
          time = time.ethics + time.ssa) # time for approval (slowest time) which is the time for researchers
 ```
 
+## 1.2 Simulated number of ethics committees and sites per proposal
 
-# Simulated number of ethics committees per proposal
-
-We simulate the number of ethics committees and site-specific approvals needed per study using Poisson distributions, with a minimum of one ethics and one SSA approval.
+We simulate the number of ethics committees and site-specific approvals needed per study using Poisson distributions, with a minimum of one ethics and one SSA approval. The site-specific approval needs a long right tail to cover those studies that recruit across multiple states. We therefore used a mixture of Poisson distributions to capture this, assuming 80% of studies are small and 20% are large.
 
 ```{r ethics.plot}
 to.plot = select(totals, id, n.ethics, n.ssa) %>%
 gather(n.ethics, n.ssa, key='app', value='number') %>%
 mutate(facet = ifelse(app=='n.ethics', 'Ethics', 'Site-specific'))
-
 hplot = ggplot(to.plot, aes(x=number)) +
   geom_bar()+
-  scale_x_continuous(breaks=1:12)+
+  scale_x_continuous(breaks=c(1,5,10,15,20))+
   xlab('Number of approvals per study')+
   ylab('Frequency')+
   theme_bw()+
@@ -89,11 +104,11 @@ hplot = ggplot(to.plot, aes(x=number)) +
 hplot
 ```
 
-# Time spent per approval
+## 1.3 Time spent per approval in the current ethics/SSA system
 
-For the times per approval, we use data from Barnett et al (2016) and Duplancic et al (2019) from their low and negligible risk studies.
+For the times per approval, we use data from Barnett et al (2016) and Duplancic et al (2019) from their studies that required an ethics and site-specific approval.
 We simulate times from these studies using an empirical distribution.
-The observed times for ethics and SSA are shown below.
+The observed times for ethics and SSA are shown below, each bar is an individual HREC or site.
 
 ```{r bar, fig.width=11, fig.height=6}
 plot = ggplot(studies, aes(x=id, y=time, fill=factor(which)))+
@@ -101,13 +116,14 @@ plot = ggplot(studies, aes(x=id, y=time, fill=factor(which)))+
   scale_fill_manual('', values=c('dark red','dark blue'))+
   theme_bw()+
   xlab('')+
+  scale_x_continuous(labels=NULL)+
   ylab('Time, days')+
-  facet_wrap(~study, scales='free_x')
+  facet_wrap(~study, scales='free_x')+
+  theme(text = element_text(size=14))
 plot
 ```
 
-
-# Simulated times
+## 1.4 Simulated approval times in the current ethics/SSA system
 
 The plot below shows the simulated times in days for studies to get ethics and SSA approval.
 The dotted vertical line is at six months.
@@ -123,14 +139,31 @@ hplot = ggplot(totals, aes(x=time)) +
 hplot
 ```
 
-# Total time and potential time saved
+## 1.5 Time in the simplified ethics/SSA system
 
-In the simplified system we assume all applications take no longer than six months, which is based on the system proposed by Clay-Williams et al (2019).
+In the simplified system we assume all applications take no longer than six months, which is based on the system proposed by Clay-Williams et al (2019). Hence we expect the tail of the distribution to be at six months as per the plot below. This is the same distribution as above squeezed into a shorter span.
+
+```{r time.plot.six.months}
+divisor = max(totals$time) / 183 # take the longest time and make it 6 months
+hplot = ggplot(totals/divisor, aes(x=time)) +
+  geom_histogram(bins=25)+
+  xlab('Time in days')+
+  ylab('Frequency')+
+  theme_bw()+
+  geom_vline(xintercept = 183, lty=2) # line at six months
+hplot
+```
+
+## 1.6 Total time and potential time saved in the ethics/SSA system
 
 ```{r times, include=FALSE}
 update = mutate(totals,
-                time.saved = time - 183, # minus 183 days for six months
-                time.saved = ifelse(time.saved < 0, 0, time.saved)) # ignore faster approvals for time saved
+      time.new = time / divisor,
+      time.saved = time - time.new #
+      # simpler version using everything over 6 months
+    #  time.saved = time - 183, # minus 183 days for six months
+    #  time.saved = ifelse(time.saved < 0, 0, time.saved) # ignore faster approvals for time saved
+                ) 
 # time in current system
 total.pre = sum(update$time)
 total.pre.years = round(sum(update$time) / 365.25) # convert to years including weekends
@@ -146,7 +179,80 @@ The estimated total time spent in the current system is `r format(total.pre.year
 The estimated total time spent in the streamlined system is `r format(total.post.years, big.mark=',')` years.
 The number of years that could be saved is `r format(saved, big.mark=',')` years.
 
-If we apply a full-time researchers offers time at an annual salary of \$`r format(salary, big.mark=',')`, then we have a salary cost of \$`r format(round(saved*salary/(10^6)), big.mark=',')` million per year.
+If we apply a full-time researchers assistant's time at an annual salary of \$`r format(salary, big.mark=',')`, then we have a salary cost of \$`r format(round(saved*salary/(10^6)), big.mark=',')` million per year.
+
+# 2. Low and negligible risk proposals
+
+```{r numbers, include=FALSE}
+# extrapolating QUT data
+n.negligible.low.risk = 492
+p.qut.low = n.negligible.low.risk/n.qut.denominator
+n.national.estimate1 = round(p.qut.low*n.proposals)
+
+## number of low risk from pubmed
+# searches
+#2018[PDAT] AND Australia[Affiliation] AND (Observational Study[PT] OR Evaluation Studies[PT] OR Observational Study, Veterinary[PT] OR Validation Studies[PT])
+#2018[PDAT] AND (QUT[Affiliation] OR Queensland University of Technology[Affiliation]) AND(Journal Article[PT]) # 1628
+n.qut.articles = 1628
+#2018[PDAT] AND Australia[Affiliation] AND Journal Article[PT] # 50577
+n.total.articles.australia = 50577
+qut.prop = n.qut.articles / n.total.articles.australia
+#
+n.national.estimate2 = round((1/qut.prop) * n.negligible.low.risk)
+
+# average
+n.national.low = round((n.national.estimate1 + n.national.estimate2)/2)
+```
+
+Here were examine the potential savings for using an US-style self-certification system in place of the current low and negligible risks system.
+
+We estimate the national number of low and negligible risk proposals in two ways.
+
+1. By multiplying the national number of HREC applications (`r format(n.proposals, big.mark=',')`) by the proportion of low and negligible risk applications from QUT's HREC (`r format(p.qut.low, digits=2)`). This gives a total national number of low and negligible risk applications of `r format(n.national.estimate1, big.mark=',')`.
+
+2. Using Pubmed, the proportional of journal articles contributed by QUT in 2018 of the total number of articles with Australian affiliations is `r format(qut.prop, digits=2)`. Using the inverse of this proportion applied to the number of low risk ethics applications at QUT in 2018 gives an estimated national number off `r format(n.national.estimate2, big.mark=',')`.
+
+Averaging the two estimates gives a national estimate of `r format(n.national.low, big.mark=',')`.
+
+## 2.1 Simulating the current approval times for low and negligible risk proposals 
+
+We simulate the current times spent by researchers on low and negligible risk proposals using the empirical data on ethics proposals from the Barnett and Duplancic studies.
+
+```{r times.low}
+times.low = data.frame(id=1:n.national.low, time=sample(ethics.times, size=n.national.low, replace=TRUE))
+tlow = ggplot(times.low, aes(x=time)) +
+  geom_histogram()+
+  xlab('Time in days')+
+  ylab('Frequency')+
+  theme_bw()+
+  theme(panel.grid.minor = element_blank())
+tlow
+```
+
+The median time is `r median(times.low$time)` days, and the inter-quartile range is `r quantile(times.low$time, 0.25)` to `r quantile(times.low$time, 0.75)` days.
+
+## 2.2 Time in the low and negligible risk proposals 
+
+We assume that a self-certification system would take researchers 2 days per proposal.
+
+```{r}
+update.low = mutate(times.low,
+      time.new = 2, # just two days in new system
+      time.saved = time - time.new) 
+# time in current system
+total.pre.low = sum(update.low$time)
+total.pre.low.years = round(sum(update.low$time) / 365.25) # convert to years including weekends
+# time saved for researchers
+total.post.low = sum(update.low$time.new)
+total.post.low.years = round(sum(update.low$time.new) / 365.25) # convert to years including weekends
+saved.low = total.pre.low.years - total.post.low.years # time saved in years
+```
+
+The estimated total time spent in the current system is `r format(total.pre.low.years, big.mark=',')` years.
+The estimated total time spent in the streamlined system is `r format(total.post.low.years, big.mark=',')` years.
+The number of years that could be saved is `r format(saved.low, big.mark=',')` years.
+
+If we apply a full-time researchers assistant's time at an annual salary of \$`r format(salary, big.mark=',')`, then we have a salary cost of \$`r format(round(saved.low*salary/(10^6)), big.mark=',')` million per year.
 
 # References
 

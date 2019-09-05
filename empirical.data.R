@@ -11,11 +11,11 @@ barnett = select(times, begin, submit, approval, SSA.start, SSA.end, with) %>%
          ssa.time = SSA.end - SSA.start) %>%
   select(id, ethics.time, ssa.time) %>%
   gather(ethics.time, ssa.time, key='app', value='time') %>%
-  mutate(id = as.numeric(as.factor(id)), # remove missing IDa
+  filter(!is.na(time)) %>%
+  mutate(id = as.numeric(factor(id)), # remove missing IDs
          study = 'Barnett',
          which = ifelse(app=='ethics.time', "HREC", 'SSA')) %>%
-  select(-app) %>%
-  filter(!is.na(time))
+  select(-app) 
 # what about withdrawn?
 
 ### b) empirical distribution of times from Duplancic et al (2019), extracted using https://apps.automeris.io/wpd/
