@@ -179,7 +179,9 @@ The estimated total time spent in the current system is `r format(total.pre.year
 The estimated total time spent in the streamlined system is `r format(total.post.years, big.mark=',')` years.
 The number of years that could be saved is `r format(saved, big.mark=',')` years.
 
-If we apply a full-time researchers assistant's time at an annual salary of \$`r format(salary, big.mark=',')`, then we have a salary cost of \$`r format(round(saved*salary/(10^6)), big.mark=',')` million per year.
+If we apply a full-time researchers assistant's time at an annual salary of \$`r format(salary, big.mark=',')`, then we have an estimated salary cost saving of \$`r format(round(saved*salary/(10^6)), big.mark=',')` million per year.
+
+Note we have only considered the research team's time and not the time for each ethics committee and site approvers.
 
 # 2. Low and negligible risk proposals
 
@@ -248,11 +250,12 @@ total.post.low.years = round(sum(update.low$time.new) / 365.25) # convert to yea
 saved.low = total.pre.low.years - total.post.low.years # time saved in years
 ```
 
+The times below are for the time between starting and finishing the approvals process.
 The estimated total time spent in the current system is `r format(total.pre.low.years, big.mark=',')` years.
 The estimated total time spent in the streamlined system is `r format(total.post.low.years, big.mark=',')` years.
 The number of years that could be saved is `r format(saved.low, big.mark=',')` years.
 
-If we apply a full-time researchers assistant's time at an annual salary of \$`r format(salary, big.mark=',')`, then we have a salary cost of \$`r format(round(saved.low*salary/(10^6)), big.mark=',')` million per year.
+If we apply a full-time researchers assistant's time at an annual salary of \$`r format(salary, big.mark=',')`, then we have an estimated salary cost saving of \$`r format(round(saved.low*salary/(10^6)), big.mark=',')` million per year.
 
 # References
 
